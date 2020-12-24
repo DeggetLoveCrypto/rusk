@@ -7,6 +7,7 @@
 use crate::leaf::BidLeaf;
 use crate::Contract;
 use canonical::Store;
+use core::ops::DerefMut;
 use dusk_blindbid::bid::Bid;
 use dusk_bls12_381::BlsScalar;
 use dusk_jubjub::{JubJubAffine, JubJubScalar};
@@ -15,15 +16,16 @@ use dusk_plonk::prelude::*;
 use poseidon252::cipher::PoseidonCipher;
 use schnorr::single_key::{PublicKey, Signature};
 
+/// TODO: Still waiting for values from the research side.
 /// t_m in the specs
 const MATURITY_PERIOD: u64 = 0;
 /// t_b in the specs
-const EXPIRATION_PERIOD: u64 = 0;
+const EXPIRATION_PERIOD: u64 = 10;
 /// t_c in the specs
 const COOLDOWN_PERIOD: u64 = 0;
 
 extern "C" {
-    fn verify_sig(pk: &u8, sig: &u8, msg: &u8, ret_addr: &mut [u8; 32]);
+    fn verify_schnorr_sig(pk: &u8, sig: &u8, msg: &u8) -> i32;
     fn verify_proof(
         pub_inputs_len: usize,
         pub_inputs: &u8,
@@ -111,8 +113,51 @@ impl<S: Store> Contract<S> {
     }
 
     pub fn extend_bid(&mut self, sig: Signature, pk: PublicKey) -> bool {
-        // Verify signature(
-        unimplemented!()
+        // Setup error flag to false
+        let mut err_flag = false;
+        // Check wether there's an entry on the map for the pk.
+        let idx = match self.map().get(pk) {
+            // If no entries are found for this PK it's just an err since there
+            // are no bids related to this PK to be extended.
+            Ok(None) => {
+                err_flag = true;
+                usize::MAX
+            }
+            Ok(Some(idx)) => idx as usize,
+            _ => {
+                err_flag = true;
+                usize::MAX
+            }
+        };
+
+        // In case there was an error, we simply return
+        if err_flag && idx == usize::MAX {
+            return false;
+        }
+
+        // Verify the signature by getting `t_e` from the Bid and calling the
+        // VERIFY_SIG host fn.
+        // Fetch the bid object from the tree getting a &mut to it.
+        let mut tree = self.tree_mut();
+        let mut bid = *tree.get_mut(idx as u64);
+        let t_e = bid.bid.expiration.clone();
+        let msg_bytes = BlsScalar::from(t_e).to_bytes();
+        let pk_bytes = pk.to_bytes();
+        let sig_bytes = sig.to_bytes();
+
+        // Verify schnorr sig.
+        let res = unsafe {
+            verify_schnorr_sig(&pk_bytes[0], &sig_bytes[0], &msg_bytes[0])
+        };
+
+        if res == 0i32 {
+            return false;
+        }
+        // Assuming now that the result of the verification is true, we now
+        // should update the expiration of the Bid by
+        // `EXPIRATION_PERIOD`
+        bid.bid.expiration += EXPIRATION_PERIOD;
+        true
     }
 
     pub fn withdraw(

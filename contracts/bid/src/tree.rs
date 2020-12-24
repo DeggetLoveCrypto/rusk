@@ -7,6 +7,8 @@
 use super::leaf::BidLeaf;
 use canonical::{Canon, Store};
 use canonical_derive::Canon;
+use microkelvin::{BranchMut, Nth};
+use nstack::NStack;
 use poseidon252::tree::{
     PoseidonBranch, PoseidonMaxAnnotation, PoseidonTree, PoseidonTreeIterator,
 };
@@ -35,15 +37,44 @@ where
     ///
     /// We don't have a mutable reference available because all its mutation
     /// should be protected by encapsulation
-    pub fn inner(
+    fn inner(
         &self,
     ) -> &PoseidonTree<BidLeaf, PoseidonMaxAnnotation, S, BID_TREE_DEPTH> {
         &self.tree
     }
 
+    /// Reference to the internal poseidon tree
+    ///
+    /// We don't have a mutable reference available because all its mutation
+    /// should be protected by encapsulation
+    fn inner_mut(
+        &mut self,
+    ) -> &mut PoseidonTree<BidLeaf, PoseidonMaxAnnotation, S, BID_TREE_DEPTH>
+    {
+        &mut self.tree
+    }
+
     /// Get a bid from a provided index
     pub fn get(&self, idx: u64) -> Option<BidLeaf> {
         self.tree.get(idx as usize).unwrap()
+    }
+
+    /// Returns a mutable refecence to the internal `Bid` that corresponds
+    /// to the given `idx`.
+    pub fn get_mut<'a>(
+        &'a mut self,
+        idx: u64,
+    ) -> BranchMut<
+        'a,
+        NStack<BidLeaf, PoseidonMaxAnnotation, S>,
+        S,
+        BID_TREE_DEPTH,
+    > {
+        self.inner_mut()
+            .as_mut()
+            .nth_mut::<BID_TREE_DEPTH>(idx)
+            .expect("Fix")
+            .expect("Fix")
     }
 
     /// Append a bid to the tree and return its index

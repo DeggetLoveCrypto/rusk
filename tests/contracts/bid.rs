@@ -17,6 +17,7 @@ use dusk_plonk::jubjub::{
 use dusk_plonk::prelude::*;
 use poseidon252::{cipher::PoseidonCipher, sponge::sponge::*};
 use rusk::{RuskExtenalError, RuskExternals};
+use schnorr::single_key::{PublicKey, SecretKey, Signature};
 
 const BYTECODE: &'static [u8] = include_bytes!(
     "../../contracts/bid/target/wasm32-unknown-unknown/release/bid_contract.wasm"
@@ -159,4 +160,80 @@ fn bid_call_wrong_proof_works() {
     // If call succeeds, this should not fail.
     cast.commit().expect("Commit couldn't be done");
     assert!(err == true);
+}
+
+#[test]
+fn extend_bid_correct_sig() {
+    // Init Env & Contract
+    let store = MemStore::new();
+    let wasm_contract = Wasm::new(Contract::new(), BYTECODE);
+    let mut remote = Remote::new(wasm_contract, &store).unwrap();
+    // Create CorrectnessCircuit invalid Proof and send it
+    let value = JubJubScalar::from(100000 as u64);
+    let blinder = JubJubScalar::from(50000 as u64);
+    let secret = JubJubAffine::from(GENERATOR_EXTENDED * value);
+    let nonce = BlsScalar::one();
+    let encrypted_data = PoseidonCipher::encrypt(
+        &[value.into(), blinder.into()],
+        &secret,
+        &nonce,
+    );
+    let commitment = JubJubAffine::from(
+        &(GENERATOR_EXTENDED * value) + &(GENERATOR_NUMS_EXTENDED * blinder),
+    );
+    let hashed_secret = sponge_hash(&[value.into()]);
+    let pk_r = PublicSpendKey::from(SecretSpendKey::new(value, blinder));
+    let stealth_addr = pk_r.gen_stealth_address(&value);
+    let proof = create_proof(commitment, value, blinder);
+    let mut pub_inp_bytes = [0u8; 33];
+    pub_inp_bytes[..].copy_from_slice(
+        &PublicInput::AffinePoint(commitment, 0, 0).to_bytes(),
+    );
+    // Add leaf to the Contract's tree and get it's pos index back
+    let mut cast = remote
+        .cast_mut::<Wasm<Contract<MemStore>, MemStore>>()
+        .unwrap();
+    let (err, idx) = cast
+        .transact(
+            &Contract::<MemStore>::bid(
+                commitment,
+                hashed_secret,
+                nonce,
+                encrypted_data,
+                stealth_addr,
+                0u64,
+                proof.clone(),
+                proof.clone(),
+                1,
+                [PublicInput::AffinePoint(commitment, 0, 0).to_bytes()],
+            ),
+            store.clone(),
+            RuskExternals::default(),
+        )
+        .expect("Failed to call the bid fn");
+    // If call succeeds, this should not fail.
+    cast.commit().expect("Commit couldn't be done");
+    assert!(err == false);
+
+    // Sign the t_e (expiration) and call extend bid.
+    let secret = SecretKey::from(value);
+    let signature = secret.sign(&mut rand::thread_rng(), BlsScalar::zero());
+
+    // Now that a Bid is inside the tree we should be able to extend it if the
+    // correct signature is provided.
+    let err = cast
+        .transact(
+            &Contract::<MemStore>::extend_bid(
+                signature,
+                PublicKey::from(&secret),
+                proof,
+            ),
+            store.clone(),
+            RuskExternals::default(),
+        )
+        .expect("Failed to call extend_bid method");
+
+    // If call succeeds, this should not fail.
+    cast.commit().expect("Commit couldn't be done");
+    assert!(err == false);
 }

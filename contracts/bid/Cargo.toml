@@ -18,8 +18,10 @@ dusk-plonk = "0.3"
 poseidon252 = { git = "https://github.com/dusk-network/poseidon252", tag = "v0.15.0", default-features = false, features = ["canon"]}
 dusk-pki = { git = "https://github.com/dusk-network/dusk-pki", tag = "v0.4.1", default-features = false, features = ["canon"]}
 cfg-if = "1"
-schnorr = {git = "https://github.com/dusk-network/schnorr", default-features = false, branch = "main"}
+schnorr = {git = "https://github.com/dusk-network/schnorr", tag = "v0.1.1-alpha"}
 dusk-kelvin-map = "0.1"
+microkelvin = "0.5"
+nstack = "0.6"
 
 [dev-dependencies]
 rand = "0.7"

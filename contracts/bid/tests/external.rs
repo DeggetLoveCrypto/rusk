@@ -14,7 +14,7 @@ use wasmi::{
 };
 
 const P_HASH: usize = 101;
-const VERIFY_SIG: usize = 102;
+const VERIFY_SCHNORR_SIG: usize = 102;
 const VERIFY_PROOF: usize = 103;
 
 #[derive(Debug, Clone)]
@@ -56,17 +56,15 @@ impl Externals for RuskExternals {
                     todo!("error out for wrong argument types")
                 }
             }
-            VERIFY_SIG => {
-                if let [wasmi::RuntimeValue::I32(pk), wasmi::RuntimeValue::I32(sig), wasmi::RuntimeValue::I32(msg), wasmi::RuntimeValue::I32(ret_addr)] =
+            VERIFY_SCHNORR_SIG => {
+                if let [wasmi::RuntimeValue::I32(pk), wasmi::RuntimeValue::I32(sig), wasmi::RuntimeValue::I32(msg)] =
                     args.as_ref()[..]
                 {
                     self.memory()?.with_direct_access_mut(|mem| {
                         let pk = pk as usize;
                         let sig = sig as usize;
                         let msg = msg as usize;
-                        let ret_addr = ret_addr as usize;
-                        mem[ret_addr] = 1u8;
-                        Ok(None)
+                        Ok(Some(RuntimeValue::I32(1)))
                     })
                 } else {
                     todo!("error out for wrong argument types")
@@ -110,17 +108,16 @@ impl ModuleImportResolver for RuskExternals {
                 ),
                 P_HASH,
             )),
-            "verify_sig" => Ok(wasmi::FuncInstance::alloc_host(
+            "verify_schnorr_sig" => Ok(wasmi::FuncInstance::alloc_host(
                 wasmi::Signature::new(
                     &[
                         wasmi::ValueType::I32,
                         wasmi::ValueType::I32,
                         wasmi::ValueType::I32,
-                        wasmi::ValueType::I32,
                     ][..],
-                    None,
+                    Some(wasmi::ValueType::I32),
                 ),
-                VERIFY_SIG,
+                VERIFY_SCHNORR_SIG,
             )),
             "verify_proof" => Ok(wasmi::FuncInstance::alloc_host(
                 wasmi::Signature::new(
